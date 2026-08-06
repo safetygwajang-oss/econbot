@@ -1,11 +1,12 @@
 """
 네이버 카페 게시글 자동 발행
-- 형님 요구: 제목은 영문+숫자만
-- 본문은 원본 최대한 살리되 안 잘리는 선에서 요약
+- 채널별로 분할 발행 (본문 길이 문제 회피)
+- 제목: 2026. 08. 06. THU WORLD ECONOMY NEWS (N) - 채널명
 """
 import re
 import time
 import urllib.parse
+from datetime import datetime
 import requests
 
 from config import (
@@ -45,25 +46,20 @@ def _sanitize(text: str) -> str:
     """네이버 카페 API가 싫어할만한 문자 제거"""
     if not text:
         return ""
-    text = re.sub(r'[\ud800-\udfff]', '', text)                         # 서로게이트
-    text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)        # 제어문자
-    text = re.sub(r'[\u200B-\u200D\uFE00-\uFE0F\uFFFD]', '', text)      # 제로폭
+    text = re.sub(r'[\ud800-\udfff]', '', text)
+    text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)
+    text = re.sub(r'[\u200B-\u200D\uFE00-\uFE0F\uFFFD]', '', text)
     return text.encode('utf-8', errors='ignore').decode('utf-8')
 
 
 # ==========================================================
-# 3. 요약 (원본 최대한 살림)
+# 3. 요약
 # ==========================================================
 def _summarize_body(body: str, max_len: int) -> str:
-    """
-    - max_len 이하면 원본 그대로
-    - 넘으면 문장 단위로 앞에서부터 채워넣고 뒤는 잘림 표시
-    """
     body = body.strip()
     if len(body) <= max_len:
         return body
 
-    # 문장 단위 분할
     sentences = re.split(r'(?<=[.!?。])\s+|\n+', body)
     sentences = [s.strip() for s in sentences if s.strip()]
 
@@ -94,68 +90,66 @@ def _summarize_body(body: str, max_len: int) -> str:
 # ==========================================================
 # 4. 제목 / 본문 빌더
 # ==========================================================
-def _build_subject(date_str: str) -> str:
+def _format_date_with_weekday(date_str: str) -> str:
     """
-    형님 요구: 영문+숫자만
-    예: '2026. 08. 06 World Economy News'
+    '2026-08-06' → '2026. 08. 06. THU'
     """
     try:
-        y, m, d = date_str.split("-")
-        formatted_date = f"{y}. {m}. {d}"
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        weekday_map = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+        wd = weekday_map[dt.weekday()]
+        return f"{dt.year}. {dt.month:02d}. {dt.day:02d}. {wd}"
     except Exception:
-        formatted_date = date_str
-    subject = f"{formatted_date} World Economy News"
+        return date_str
+
+
+def _build_subject(date_str: str, index: int, total: int, chat_name: str) -> str:
+    """
+    2026. 08. 06. THU WORLD ECONOMY NEWS (1/2) 키움증권 한지영
+    """
+    date_formatted = _format_date_with_weekday(date_str)
+    # 채널명에서 특수문자 제거 (URL 인코딩 이슈 회피)
+    safe_chat_name = re.sub(r'[^\w가-힣\s]', '', chat_name).strip()
+    subject = f"{date_formatted} WORLD ECONOMY NEWS ({index}/{total}) {safe_chat_name}"
     return subject[:MAX_SUBJECT_LEN]
 
 
-def _build_unified_content(digest_list: list) -> str:
+def _build_channel_content(digest: dict, date_str: str) -> str:
     """
-    모든 채널 → 하나의 본문
-    깔끔한 텍스트 스타일 (특수문자 최소화)
+    채널 하나의 본문 생성
     """
     lines = []
-    total_count = sum(d["count"] for d in digest_list)
+    date_formatted = _format_date_with_weekday(date_str)
 
-    # 헤더
-    lines.append(f"Date: {digest_list[0]['date']}")
-    lines.append(f"Channels: {len(digest_list)} / Messages: {total_count}")
+    lines.append(f"[{date_formatted}]")
+    lines.append(f"Channel: {digest['chat_name']}")
+    lines.append(f"Messages: {digest['count']}")
     lines.append("")
     lines.append("-" * 30)
     lines.append("")
 
     current_size = sum(len(l) + 1 for l in lines)
 
-    for digest in digest_list:
-        # 채널 헤더
-        lines.append("")
-        lines.append(f"[{digest['chat_name']}]")
-        lines.append("")
+    for i, item in enumerate(digest["items"], 1):
+        time_str = item.get("date_kst", "")[11:16]
+        raw_body = mask_forbidden(item.get("body", ""))
+        summarized = _summarize_body(raw_body, MAX_PER_ITEM)
 
-        for i, item in enumerate(digest["items"], 1):
-            time_str = item.get("date_kst", "")[11:16]
-            raw_body = mask_forbidden(item.get("body", ""))
+        block_lines = [
+            f"{i}. {time_str}",
+            summarized,
+            "",
+        ]
+        block_size = sum(len(l) + 1 for l in block_lines)
 
-            summarized = _summarize_body(raw_body, MAX_PER_ITEM)
-
-            block_lines = [
-                f"{i}. {time_str}",
-                summarized,
-                "",
-            ]
-            block_size = sum(len(l) + 1 for l in block_lines)
-
-            # 전체 크기 초과 방지
-            if current_size + block_size > MAX_TOTAL_BODY - 500:
-                lines.append("")
-                lines.append("... (length limit)")
-                current_size = MAX_TOTAL_BODY
-                break
-
-            lines.extend(block_lines)
-            current_size += block_size
-
-        if current_size >= MAX_TOTAL_BODY:
+        # 채널당 본문도 너무 길면 자름
+        if current_size + block_size > MAX_TOTAL_BODY - 500:
+            lines.append("")
+            lines.append("... (length limit)")
             break
+
+        lines.extend(block_lines)
+        current_size += block_size
 
     lines.append("")
     lines.append("-" * 30)
@@ -173,10 +167,8 @@ def _post_once(subject: str, content: str, token: str) -> tuple[bool, int, str]:
         "Authorization": f"Bearer {token}",
         "Content-Type":  "application/x-www-form-urlencoded; charset=utf-8",
     }
-    # 개행 → <br> 로 변환 (카페에서 예쁘게 표시)
     content_html = content.replace("\n", "<br>")
 
-    # 🔧 openyn=true 제거 (게시판이 전체공개 미허용 시 403 유발)
     body = "&".join([
         f"subject={urllib.parse.quote(subject, safe='')}",
         f"content={urllib.parse.quote(content_html, safe='')}",
@@ -190,9 +182,7 @@ def _post_once(subject: str, content: str, token: str) -> tuple[bool, int, str]:
     except Exception as e:
         return False, 0, f"네트워크: {e}"
 
-    # 🔍 디버깅 강화: 응답 전문 로그
-    info(f"  [DEBUG] HTTP Status: {res.status_code}")
-    info(f"  [DEBUG] Response Body: {res.text[:500]}")
+    info(f"    [DEBUG] HTTP {res.status_code} | {res.text[:200]}")
 
     try:
         result = res.json()
@@ -201,49 +191,90 @@ def _post_once(subject: str, content: str, token: str) -> tuple[bool, int, str]:
 
     status = result.get("message", {}).get("status")
     if status != "200":
-        return False, res.status_code, f"status={status}, body={res.text[:250]}"
+        return False, res.status_code, f"status={status}"
 
     return True, res.status_code, result["message"]["result"]["articleUrl"]
 
 
 # ==========================================================
-# 6. 통합 발행 (Rate Limit 회피)
+# 6. 분할 발행 (채널별)
 # ==========================================================
 def post_all_unified(digest_list: list, token: str) -> str | None:
+    """
+    채널별로 나눠서 각각 발행
+    - 하나라도 성공하면 마지막 성공 URL 반환
+    - 각 발행 사이 15초 대기 (도배 방지)
+    """
     if not digest_list:
         warn("발행할 내용 없음")
         return None
 
     date_str = digest_list[0]["date"]
-    subject = _sanitize(remove_emojis(_build_subject(date_str)))
-    content = _sanitize(remove_emojis(_build_unified_content(digest_list)))
+    total = len(digest_list)
 
     info("=" * 60)
-    info(f"📢 통합 발행 시작")
-    info(f"  제목: {subject}")
-    info(f"  본문: {len(content)}자")
-    info(f"  채널: {len(digest_list)}개")
+    info(f"📢 분할 발행 시작: 총 {total}개 채널")
     info("=" * 60)
 
-    delays = [0, 30, 90]  # 즉시 → 30초 → 90초
-    for attempt, delay in enumerate(delays, 1):
-        if delay > 0:
-            info(f"  ⏳ {delay}초 대기 후 재시도...")
-            time.sleep(delay)
+    success_urls = []
+    failed_channels = []
 
-        info(f"\n  [시도 {attempt}/{len(delays)}]")
-        success, code, result = _post_once(subject, content, token)
+    for idx, digest in enumerate(digest_list, 1):
+        chat_name = digest["chat_name"]
+        subject = _sanitize(remove_emojis(
+            _build_subject(date_str, idx, total, chat_name)
+        ))
+        content = _sanitize(remove_emojis(
+            _build_channel_content(digest, date_str)
+        ))
 
-        if success:
-            ok(f"  ✅ 성공: {result}")
-            return result
+        info("")
+        info(f"[{idx}/{total}] {chat_name}")
+        info(f"  제목: {subject}")
+        info(f"  본문: {len(content)}자")
 
-        warn(f"  실패 [HTTP {code}]: {result[:200]}")
+        # 각 채널당 3회 재시도
+        delays = [0, 15, 45]
+        posted = False
 
-    fail("\n  ❌ 3회 모두 실패")
-    fail("  가능한 원인:")
-    fail(f"  1. 일일 API 발행 한도 초과")
-    fail(f"  2. 카페 도배 방지")
-    fail(f"  3. Refresh Token 만료")
-    fail(f"  4. CAFE_ID({CAFE_ID}) or MENU_ID({MENU_ID}) 오류")
+        for attempt, delay in enumerate(delays, 1):
+            if delay > 0:
+                info(f"  ⏳ {delay}초 대기...")
+                time.sleep(delay)
+
+            info(f"  [시도 {attempt}/{len(delays)}]")
+            success, code, result = _post_once(subject, content, token)
+
+            if success:
+                ok(f"  ✅ 성공: {result}")
+                success_urls.append(result)
+                posted = True
+                break
+            else:
+                warn(f"  실패 [HTTP {code}]: {result[:150]}")
+
+        if not posted:
+            fail(f"  ❌ {chat_name} 3회 모두 실패")
+            failed_channels.append(chat_name)
+
+        # 다음 채널로 넘어가기 전 도배 방지 대기
+        if idx < total:
+            info(f"  ⏳ 다음 채널까지 15초 대기 (도배 방지)")
+            time.sleep(15)
+
+    # 최종 결과 요약
+    info("")
+    info("=" * 60)
+    info(f"📊 최종 결과")
+    info(f"  성공: {len(success_urls)}/{total}")
+    info(f"  실패: {len(failed_channels)}/{total}")
+    if failed_channels:
+        warn(f"  실패 채널: {', '.join(failed_channels)}")
+    info("=" * 60)
+
+    if success_urls:
+        for url in success_urls:
+            ok(f"  🔗 {url}")
+        return success_urls[-1]
+
     return None

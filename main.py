@@ -1,42 +1,45 @@
 """
-🧪 진단용 - 최소 본문 테스트
-정상 작동 확인 후 원래 코드로 복구할 것!
+전체 실행 파이프라인
+1. 텔레그램 수집
+2. 데이터 저장 (JSON)
+3. 채널별 그룹핑
+4. 네이버 카페 발행
 """
 import sys
+from telegram_collector import fetch_messages, save_results, build_digest_list
 from cafe_poster import get_access_token, post_all_unified
 from utils import info, ok, fail, warn
 
 
 def main():
     try:
-        info("🧪 진단 테스트 시작: 최소 본문으로 발행 시도")
+        # 1. 텔레그램 수집
+        info("🚀 시작: 텔레그램 → 네이버 카페 자동 발행")
         info("-" * 60)
 
-        # 🧪 가짜 digest_list - 최소 데이터
-        digest_list = [
-            {
-                "chat_name": "테스트채널",
-                "messages": [
-                    {
-                        "date": "2026-08-06 10:00",
-                        "text": "안녕하세요 테스트입니다"
-                    }
-                ]
-            }
-        ]
+        messages = fetch_messages()
+        if not messages:
+            warn("수집된 메시지 없음. 종료")
+            return 0
 
-        info(f"테스트 digest: {digest_list}")
+        # 2. JSON 저장
+        save_results(messages)
+
+        # 3. 채널별 digest 구성
+        digest_list = build_digest_list(messages)
+        info(f"채널별 그룹핑 완료: {len(digest_list)}개 채널")
+
+        # 4. 네이버 카페 발행
         info("-" * 60)
         info("네이버 카페 발행 시작")
-        
         token = get_access_token()
         article_url = post_all_unified(digest_list, token)
 
         if article_url:
-            ok(f"🎉 테스트 성공! {article_url}")
+            ok(f"🎉 최종 완료! {article_url}")
             return 0
         else:
-            fail("테스트 실패")
+            fail("발행 실패")
             return 1
 
     except Exception as e:

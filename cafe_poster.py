@@ -176,10 +176,10 @@ def _post_once(subject: str, content: str, token: str) -> tuple[bool, int, str]:
     # 개행 → <br> 로 변환 (카페에서 예쁘게 표시)
     content_html = content.replace("\n", "<br>")
 
+    # 🔧 openyn=true 제거 (게시판이 전체공개 미허용 시 403 유발)
     body = "&".join([
         f"subject={urllib.parse.quote(subject, safe='')}",
         f"content={urllib.parse.quote(content_html, safe='')}",
-        "openyn=true",
     ])
     try:
         res = requests.post(
@@ -189,6 +189,10 @@ def _post_once(subject: str, content: str, token: str) -> tuple[bool, int, str]:
         )
     except Exception as e:
         return False, 0, f"네트워크: {e}"
+
+    # 🔍 디버깅 강화: 응답 전문 로그
+    info(f"  [DEBUG] HTTP Status: {res.status_code}")
+    info(f"  [DEBUG] Response Body: {res.text[:500]}")
 
     try:
         result = res.json()

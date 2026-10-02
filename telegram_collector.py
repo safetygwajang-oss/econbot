@@ -74,7 +74,7 @@ def fetch_messages():
                 })
                 count += 1
 
-            info(f"  📥 {chat_name}: {count}건")
+            info(f"  {chat_name}: {count}건")
 
     results.sort(key=lambda x: x["date_kst"])
     ok(f"총 수집: {len(results)}건")
@@ -130,5 +130,5 @@ if __name__ == "__main__":
     print("샘플 3건")
     print("=" * 60)
     for m in msgs[:3]:
-        print(f"\n📌 [{m['date_kst'][:16]}] {m['chat_name']}")
+        print(f"\n[{m['date_kst'][:16]}] {m['chat_name']}")
         print(f"   {m['text'][:100]}")

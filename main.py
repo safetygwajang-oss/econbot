@@ -14,7 +14,7 @@ from utils import info, ok, fail, warn
 def main():
     try:
         # 1. 텔레그램 수집
-        info("🚀 시작: 텔레그램 → 네이버 카페 자동 발행")
+        info("시작: 텔레그램 → 네이버 카페 경제 뉴스 브리핑")
         info("-" * 60)
 
         messages = fetch_messages()
@@ -36,7 +36,7 @@ def main():
         article_url = post_all_unified(digest_list, token)
 
         if article_url:
-            ok(f"🎉 최종 완료! {article_url}")
+            ok(f"최종 완료: {article_url}")
             return 0
         else:
             fail("발행 실패")

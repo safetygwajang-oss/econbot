@@ -26,11 +26,12 @@ DATA_DIR.mkdir(exist_ok=True)
 CAFE_ID = "31767633"
 MENU_ID = "16"
 
-# 본문 크기 제한
-# 🆕 5000 → 30000 으로 확대 (원본 최대한 살리기 위해)
+# 본문 크기 제한과 기사별 발췌 길이
 MAX_TOTAL_BODY  = 30000
-MAX_PER_ITEM    = 1500
+MAX_PER_ITEM    = 900
 MAX_SUBJECT_LEN = 90
+MAX_ITEM_HEADLINE = 80
+MAX_ITEM_PARAGRAPHS = 3
 
 # ==========================================================
 # 텔레그램

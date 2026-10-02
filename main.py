@@ -6,7 +6,7 @@
 4. 네이버 카페 발행
 """
 import sys
-from telegram_collector import fetch_messages, save_results, build_digest_list
+from telegram_collector import fetch_messages, save_results, build_digest_list, TelegramSessionError
 from cafe_poster import get_access_token, post_all_unified
 from utils import info, ok, fail, warn
 
@@ -42,6 +42,9 @@ def main():
             fail("발행 실패")
             return 1
 
+    except TelegramSessionError as e:
+        fail(str(e))
+        return 1
     except Exception as e:
         fail(f"예외 발생: {e}")
         import traceback

@@ -35,6 +35,29 @@ python main.py
 
 카페와 게시판은 기존 `config.py`의 `CAFE_ID`, `MENU_ID`를 사용합니다. 지정된 두 텔레그램 채널에서 전날 오전 8시부터 오늘 오전 8시까지(KST)의 자료를 수집하여 채널별로 게시합니다.
 
+## 전화번호 입력 / EOFError 해결
+
+`Please enter your phone (or bot token)` 뒤에 `EOFError`가 나오면 저장된 `TELEGRAM_SESSION`으로 로그인이 복원되지 않은 상태입니다. GitHub Actions에서는 전화번호와 로그인 코드를 입력할 수 없습니다. 빈 값, 잘못 복사한 값, 인증이 해제된 세션인지 확인하고 다음 순서로 다시 발급하세요.
+
+1. 수정 파일을 개인 PC에 풀고 터미널에서 해당 폴더로 이동합니다.
+2. 아래 명령을 실행합니다. **GitHub Actions에서 세션 발급 도구를 실행하지 마세요.**
+
+   ```bash
+   pip install -r requirements.txt
+   python generate_telegram_session.py
+   ```
+
+3. 기존 Secrets에 등록한 것과 동일한 API ID와 API HASH를 입력합니다. API 정보는 [텔레그램 개발자 페이지](https://my.telegram.org/apps)에서 확인할 수 있습니다.
+4. 수집할 채널에 참여한 개인 계정의 전화번호를 국가번호 포함 형식(예: `+821012345678`)으로 입력합니다. 로그인 코드와 필요한 경우 2단계 인증 비밀번호를 입력합니다.
+5. 생성된 `telegram-session.txt`를 열고 내용 전체를 복사합니다. GitHub 저장소의 `Settings → Secrets and variables → Actions`에서 `TELEGRAM_SESSION`을 수정하여 붙여넣고 저장합니다. 따옴표나 변수명은 붙이지 않습니다.
+6. `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`가 발급에 사용한 값과 같은지 확인하고 Actions의 `Daily Auto Post`를 다시 실행합니다.
+
+세션 파일은 계정 로그인 정보이므로 저장소나 채팅에 올리지 마세요. 기본 파일명은 `.gitignore`에 포함되어 있습니다. 다른 파일명을 `--output`으로 지정한다면 해당 파일도 커밋하지 마세요. 이미 저장 파일이 존재하면 덮어쓰지 않으므로, 기존 파일을 옮기거나 다른 출력 파일을 지정하세요.
+
+이번 수정에서는 자동 수집에 `with TelegramClient(...)` / `start()`를 사용하지 않고 `connect()` 후 인증 상태를 검사합니다. 인증에 실패하면 입력을 요청하지 않고 세션 재발급 방법을 안내한 뒤 실패 코드로 종료합니다. 채널 ID를 조회하기 전에 대화 목록을 읽어 채널 정보도 준비합니다. 모든 대상 채널에 접근하지 못한 경우에는 계정의 채널 참여 여부를 확인하도록 오류를 표시합니다.
+
+공식 참고: [Telethon 문자열 세션](https://docs.telethon.dev/en/stable/concepts/sessions.html#string-sessions)
+
 ## 글 길이 조정
 
 `config.py`에서 다음 값을 바꿀 수 있습니다.
